@@ -69,9 +69,32 @@ def setup_custom_fields():
 		_ensure_property_setter(dt, "set_warehouse", "reqd", "1", "Check")
 		_ensure_property_setter(dt, "set_warehouse", "bold", "1", "Check")
 
+	_upgrade_sultan_pos_cash_transaction_type()
+
 	frappe.db.commit()
 	frappe.clear_cache()
 	return f"Created/updated {count} accounting custom fields."
+
+
+_TXN_TYPE_OPTIONS = "Cash In\nCash Out\nOpening Difference\nClosing Difference"
+
+
+def _upgrade_sultan_pos_cash_transaction_type():
+	"""Ensure Sultan POS Cash Transaction.transaction_type has all 4 options and is read-only."""
+	row = frappe.db.get_value(
+		"DocField",
+		{"parent": "Sultan POS Cash Transaction", "fieldname": "transaction_type"},
+		["name", "options", "read_only", "default"],
+		as_dict=True,
+	)
+	if not row:
+		return
+	if row.options != _TXN_TYPE_OPTIONS or not row.read_only or row.default != "Cash In":
+		frappe.db.set_value("DocField", row.name, {
+			"options": _TXN_TYPE_OPTIONS,
+			"read_only": 1,
+			"default": "Cash In",
+		})
 
 
 def _ensure_property_setter(dt, field, prop, value, prop_type="Data"):
