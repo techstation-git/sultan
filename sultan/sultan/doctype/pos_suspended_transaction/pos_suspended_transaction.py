@@ -226,6 +226,8 @@ def create_cash_transaction_from_pos(pos_session, amount, mode_of_payment,
 
 def on_pos_opening_entry_submit(doc, method=None):
     """Check for difference between last closing and this opening amount."""
+    from sultan.sultan.api.cash_transaction import _create_sultan_cash_transaction
+
     last_closing = frappe.get_all(
         "POS Closing Entry",
         filters={"pos_profile": doc.pos_profile, "docstatus": 1, "company": doc.company},
@@ -260,7 +262,7 @@ def on_pos_opening_entry_submit(doc, method=None):
             _("Opening Difference (Gain)") if difference > 0.0
             else _("Opening Difference (Loss)")
         )
-        create_cash_transaction_from_pos(
+        _create_sultan_cash_transaction(
             pos_session=doc.name,
             amount=abs(difference),
             mode_of_payment=row.mode_of_payment,
@@ -271,29 +273,35 @@ def on_pos_opening_entry_submit(doc, method=None):
 
 
 def before_validate_pos_closing_entry(doc, method=None):
-    """Recalculate expected amounts including suspended transactions."""
+    """Recalculate expected amounts from Sultan POS Cash Transactions."""
     if not doc.pos_opening_entry:
         return
 
-    txns = frappe.get_all(
-        "POS Suspended Transaction",
-        filters={"pos_session": doc.pos_opening_entry},
-        fields=["name", "mode_of_payment", "total_amount", "description", "transaction_type"],
+    # All 4 transaction types now live in Sultan POS Cash Transaction.
+    cash_txns = frappe.get_all(
+        "Sultan POS Cash Transaction",
+        filters={"pos_opening_entry": doc.pos_opening_entry, "docstatus": 1},
+        fields=["name", "mode_of_payment", "amount", "description", "transaction_type"],
     )
 
     doc.set("custom_pos_suspended_transactions", [])
     txn_sums = {}
-    for t in txns:
-        mop = t.mode_of_payment
-        if t.transaction_type in ("Cash In", "Cash Out"):
-            txn_sums[mop] = txn_sums.get(mop, 0.0) + flt(t.total_amount)
-        if t.transaction_type != "Closing Difference":
-            if hasattr(doc, "custom_pos_suspended_transactions"):
-                doc.append("custom_pos_suspended_transactions", {
-                    "method": t.mode_of_payment,
-                    "remarks": t.description,
-                    "amount": flt(t.total_amount),
-                })
+    for t in cash_txns:
+        mop = t.mode_of_payment or ""
+        amt = flt(t.amount)
+        if t.transaction_type == "Cash In":
+            txn_sums[mop] = txn_sums.get(mop, 0.0) + amt
+        elif t.transaction_type == "Cash Out":
+            txn_sums[mop] = txn_sums.get(mop, 0.0) - amt
+        # Opening/Closing Difference are reconciliation entries; they don't add
+        # to expected cash — they describe a discrepancy that already existed.
+        if t.transaction_type != "Closing Difference" and hasattr(doc, "custom_pos_suspended_transactions"):
+            sign = -1 if t.transaction_type == "Cash Out" else 1
+            doc.append("custom_pos_suspended_transactions", {
+                "method": mop,
+                "remarks": t.description,
+                "amount": amt * sign,
+            })
 
     invoices = [t.pos_invoice for t in doc.pos_transactions]
     for row in doc.payment_reconciliation:
@@ -328,7 +336,9 @@ def before_validate_pos_closing_entry(doc, method=None):
 
 
 def on_pos_closing_entry_submit(doc, method=None):
-    """Create a Closing Difference transaction for any payment reconciliation differences."""
+    """Create Closing Difference transactions in Sultan POS Cash Transaction."""
+    from sultan.sultan.api.cash_transaction import _create_sultan_cash_transaction
+
     for row in doc.payment_reconciliation:
         if flt(row.difference) == 0.0:
             continue
@@ -340,56 +350,37 @@ def on_pos_closing_entry_submit(doc, method=None):
         if not track:
             continue
 
-        write_off_account = frappe.db.get_value("POS Profile", doc.pos_profile, "write_off_account")
-        if not write_off_account:
-            write_off_account = frappe.get_cached_value("Company", doc.company, "write_off_account")
-        if not write_off_account:
-            frappe.throw(_(
-                "Please configure 'Write Off Account' in POS Profile {0} or Company {1}."
-            ).format(doc.pos_profile, doc.company))
-
-        txn = frappe.new_doc("POS Suspended Transaction")
-        txn.pos_session = doc.pos_opening_entry
-        txn.pos_closing_entry = doc.name
-        txn.company = doc.company
-        txn.mode_of_payment = row.mode_of_payment
-        txn.posting_date_time = frappe.utils.now_datetime()
-        txn.total_amount = flt(row.difference)
-        txn.description = (
+        desc = (
             _("Closing Difference (Gain)") if flt(row.difference) > 0.0
             else _("Closing Difference (Loss)")
         )
-        txn.transaction_type = "Closing Difference"
-        txn.append("accounts", {
-            "account": write_off_account,
-            "amount_in_account_currency": abs(flt(row.difference)),
-            "exchange_rate": 1.0,
-        })
-        txn.flags.from_pos_api = True
-        txn.flags.ignore_permissions = True
-        txn.insert(ignore_permissions=True)
+        _create_sultan_cash_transaction(
+            pos_session=doc.pos_opening_entry,
+            amount=abs(flt(row.difference)),
+            mode_of_payment=row.mode_of_payment,
+            description=desc,
+            transaction_type="Closing Difference",
+        )
         frappe.db.commit()
-
-    frappe.db.set_value(
-        "POS Suspended Transaction",
-        {"pos_session": doc.pos_opening_entry},
-        "pos_closing_entry",
-        doc.name,
-    )
 
 
 def on_pos_closing_entry_cancel(doc, method=None):
-    txns = frappe.get_all(
-        "POS Suspended Transaction",
-        filters={"pos_session": doc.pos_opening_entry, "transaction_type": "Closing Difference"},
+    """Cancel Closing Difference Sultan POS Cash Transactions when closing is cancelled."""
+    closing_txns = frappe.get_all(
+        "Sultan POS Cash Transaction",
+        filters={
+            "pos_opening_entry": doc.pos_opening_entry,
+            "transaction_type": "Closing Difference",
+            "docstatus": 1,
+        },
+        pluck="name",
     )
-    for t in txns:
-        frappe.delete_doc("POS Suspended Transaction", t.name, ignore_permissions=True)
+    for name in closing_txns:
+        txn_doc = frappe.get_doc("Sultan POS Cash Transaction", name)
+        # Cancel linked JE first
+        if txn_doc.linked_journal_entry:
+            je = frappe.get_doc("Journal Entry", txn_doc.linked_journal_entry)
+            if je.docstatus == 1:
+                je.cancel()
+        txn_doc.cancel()
         frappe.db.commit()
-
-    frappe.db.set_value(
-        "POS Suspended Transaction",
-        {"pos_session": doc.pos_opening_entry},
-        "pos_closing_entry",
-        None,
-    )

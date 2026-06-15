@@ -80,7 +80,7 @@ _TXN_TYPE_OPTIONS = "Cash In\nCash Out\nOpening Difference\nClosing Difference"
 
 
 def _upgrade_sultan_pos_cash_transaction_type():
-	"""Ensure Sultan POS Cash Transaction.transaction_type has all 4 options and is read-only."""
+	"""Ensure Sultan POS Cash Transaction has all 4 options and mode_of_payment field."""
 	row = frappe.db.get_value(
 		"DocField",
 		{"parent": "Sultan POS Cash Transaction", "fieldname": "transaction_type"},
@@ -95,6 +95,31 @@ def _upgrade_sultan_pos_cash_transaction_type():
 			"read_only": 1,
 			"default": "Cash In",
 		})
+
+	# Ensure mode_of_payment field exists (added after initial doctype creation)
+	if not frappe.db.get_value(
+		"DocField",
+		{"parent": "Sultan POS Cash Transaction", "fieldname": "mode_of_payment"},
+		"name",
+	):
+		pos_profile_idx = frappe.db.get_value(
+			"DocField",
+			{"parent": "Sultan POS Cash Transaction", "fieldname": "pos_profile"},
+			"idx",
+		) or 0
+		new_field = frappe.new_doc("DocField")
+		new_field.parent = "Sultan POS Cash Transaction"
+		new_field.parenttype = "DocType"
+		new_field.parentfield = "fields"
+		new_field.fieldname = "mode_of_payment"
+		new_field.label = "Mode of Payment"
+		new_field.fieldtype = "Link"
+		new_field.options = "Mode of Payment"
+		new_field.idx = pos_profile_idx + 1
+		new_field.insert(ignore_permissions=True)
+		if not frappe.db.has_column("Sultan POS Cash Transaction", "mode_of_payment"):
+			frappe.db.add_column("Sultan POS Cash Transaction", "mode_of_payment", "varchar(140)")
+		frappe.clear_cache(doctype="Sultan POS Cash Transaction")
 
 
 def _ensure_property_setter(dt, field, prop, value, prop_type="Data"):
@@ -229,9 +254,14 @@ def ensure_exchange_rate(doc):
 	rate = flt(getattr(doc, "custom_exchange_rate_override", None)) or DEFAULT_LBP_PER_USD
 	doc.custom_exchange_rate_override = rate
 
+	# Only override the accounting conversion_rate when the company books in LBP.
+	# For other company currencies (e.g. EGP, USD) the standard Frappe rate lookup
+	# must be left alone — overriding it with the LBP/USD rate causes wrong totals
+	# and makes the browser form perpetually "Not Saved" (ERPNext re-fetches the
+	# real rate client-side and detects a mismatch).
 	if doc.doctype in ("Sales Invoice", "Purchase Invoice"):
 		company_currency = frappe.get_cached_value("Company", doc.company, "default_currency") if doc.company else None
-		if doc.currency and company_currency and doc.currency != company_currency:
+		if company_currency == "LBP" and doc.currency and doc.currency != "LBP":
 			doc.conversion_rate = rate
 
 

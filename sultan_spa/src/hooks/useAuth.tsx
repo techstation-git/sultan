@@ -31,6 +31,7 @@ interface AuthContextType {
       token_delivery?: boolean
     }
   }>
+  loginAsEmployee: (employeeId: string, employeeDisplayName: string) => void
   logout: () => Promise<void>
   checkSession: () => Promise<boolean>
   loading: boolean
@@ -156,6 +157,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const loginAsEmployee = (employeeId: string, employeeDisplayName: string) => {
+    const userData: User = {
+      name: employeeId,
+      email: employeeId,
+      full_name: employeeDisplayName,
+      role: "Cashier",
+    }
+    setUser(userData)
+    localStorage.setItem("erpnext_token", "authenticated")
+    localStorage.setItem("user_data", JSON.stringify(userData))
+  }
+
   const logout = async () => {
     await erpnextAPI.logout()
     setUser(null)
@@ -187,6 +200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         login,
+        loginAsEmployee,
         logout,
         checkSession,
         loading,

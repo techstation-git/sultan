@@ -668,8 +668,40 @@ def create_and_submit_invoice(data):
 		doc.paid_amount = amount_paid
 		doc.outstanding_amount = 0
 
-		# Save then submit; if submit fails (e.g. negative stock), delete the draft and return error
-		# (do not re-raise: Frappe would rollback the transaction and undo the delete)
+		# When the POS Profile has "Consolidate Invoice on Close" enabled, save as a
+		# draft and return immediately.  GL entries and stock deductions are posted
+		# in batch when the cashier closes the session (_submit_draft_invoices_for_closing).
+		use_consolidation = frappe.db.get_value(
+			"POS Profile", doc.pos_profile, "custom_consolidate_invoicing"
+		)
+		if use_consolidation:
+			doc.save(ignore_permissions=True)
+			processing_time = time.time() - start_time
+			frappe.logger().info(
+				f"Draft invoice {doc.name} saved (consolidation mode) in {processing_time:.2f}s"
+			)
+			return {
+				"success": True,
+				"invoice_name": doc.name,
+				"invoice_id": doc.name,
+				"invoice": {
+					"name": doc.name,
+					"doctype": doc.doctype,
+					"customer": doc.customer,
+					"customer_name": doc.customer_name,
+					"posting_date": doc.posting_date,
+					"base_grand_total": doc.base_grand_total,
+					"currency": doc.currency,
+					"status": "Draft",
+					"is_pos": doc.is_pos,
+					"company": doc.company,
+				},
+				"payment_entry": None,
+				"processing_time": round(processing_time, 2),
+			}
+
+		# Standard path: save then submit; if submit fails (e.g. negative stock),
+		# rollback the save and return error.
 		doc.save(ignore_permissions=True)
 		try:
 			doc.submit()
@@ -1733,16 +1765,27 @@ def _fix_stamp_gl_entries(doc, gl_entries):
 				gle["debit"] = lbp_amount
 				gle["debit_in_account_currency"] = lbp_amount
 		else:
-			# Company in USD: credit in USD, credit_in_account_currency in LBP
-			usd_amount = flt(lbp_amount / exchange_rate)
-			if gle.get("credit") or gle.get("credit_in_account_currency"):
-				gle["credit"] = usd_amount
+			# Non-LBP company (e.g. EGP, USD).
+			# ERPNext already computed gle["credit"] correctly in company currency
+			# (it uses base_tax_amount which equals tax_amount * conversion_rate).
+			# We must NOT overwrite that — doing so caused "Debit and Credit not equal"
+			# because it substituted the USD amount (4.85) for the EGP amount (728.21).
+			# We only need to fix credit_in_account_currency (which ERPNext wrongly sets
+			# to the invoice-currency amount) and set the LBP exchange rate so Frappe's
+			# GL validator passes: credit_in_account_currency * exchange_rate == credit.
+			existing_credit = flt(gle.get("credit") or 0)
+			existing_debit  = flt(gle.get("debit") or 0)
+			base_amount = existing_credit or existing_debit  # already in company currency
+			gle_rate = flt(base_amount / lbp_amount) if lbp_amount else 0
+
+			if existing_credit or gle.get("credit_in_account_currency"):
 				gle["credit_in_account_currency"] = lbp_amount
 				gle["account_currency"] = "LBP"
+				gle["exchange_rate"] = gle_rate
 			else:
-				gle["debit"] = usd_amount
 				gle["debit_in_account_currency"] = lbp_amount
 				gle["account_currency"] = "LBP"
+				gle["exchange_rate"] = gle_rate
 
 
 class CustomSalesInvoice(SalesInvoice):

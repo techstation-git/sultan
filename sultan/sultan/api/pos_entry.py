@@ -225,6 +225,160 @@ def validate_opening_entry(doc, method):
 		frappe.throw(_("Cashier {0} already has an open entry: {1}").format(cashier_name, exists))
 
 
+def _consolidate_draft_invoices_for_closing(opening_entry_name):
+	"""Merge all draft Sales Invoices for this session into one SINV per customer.
+
+	For each customer that placed orders during the session, all their draft
+	invoices are combined into a single submitted Sales Invoice.  The draft
+	originals are deleted afterwards.  Raises frappe.ValidationError if any
+	customer's consolidated invoice cannot be submitted (e.g. insufficient stock).
+	"""
+	from collections import defaultdict
+	from frappe.utils import flt, nowdate, nowtime
+
+	drafts = frappe.get_all(
+		"Sales Invoice",
+		filters={"custom_pos_opening_entry": opening_entry_name, "docstatus": 0},
+		fields=[
+			"name", "customer", "pos_profile", "company", "currency",
+			"conversion_rate", "warehouse", "is_pos", "taxes_and_charges",
+		],
+		order_by="creation asc",
+	)
+	if not drafts:
+		frappe.logger().info(
+			f"[Consolidation] No draft invoices for opening entry {opening_entry_name}."
+		)
+		return
+
+	by_customer = defaultdict(list)
+	for d in drafts:
+		by_customer[d.customer].append(d.name)
+
+	failures = []
+	for customer, draft_names in by_customer.items():
+		try:
+			consolidated = _build_consolidated_invoice(
+				customer, draft_names, opening_entry_name
+			)
+			consolidated.insert(ignore_permissions=True)
+			consolidated.save(ignore_permissions=True)
+			# After save totals are computed — align paid_amount to grand_total
+			consolidated.paid_amount = flt(consolidated.grand_total)
+			consolidated.base_paid_amount = flt(consolidated.base_grand_total)
+			consolidated.outstanding_amount = 0
+			consolidated.save(ignore_permissions=True)
+			consolidated.submit()
+			frappe.db.commit()
+
+			# Delete the now-redundant draft originals
+			for name in draft_names:
+				try:
+					frappe.delete_doc("Sales Invoice", name, ignore_permissions=True, force=True)
+				except Exception:
+					pass
+			frappe.db.commit()
+
+			frappe.logger().info(
+				f"[Consolidation] {len(draft_names)} order(s) for {customer} → {consolidated.name}"
+			)
+		except Exception as e:
+			frappe.db.rollback()
+			failures.append(f"  • {customer}: {e!s}")
+			frappe.log_error(
+				frappe.get_traceback(),
+				f"[Consolidation] Failed for customer {customer}",
+			)
+
+	if failures:
+		frappe.throw(
+			_(
+				"Could not consolidate orders for {0} customer(s). "
+				"Please resolve the issues and try again:\n\n{1}"
+			).format(len(failures), "\n".join(failures))
+		)
+
+
+def _build_consolidated_invoice(customer, draft_names, opening_entry_name):
+	"""Return an unsaved Sales Invoice doc combining all items and payments from draft_names."""
+	from frappe.utils import flt, nowdate, nowtime
+
+	draft_docs = [frappe.get_doc("Sales Invoice", n) for n in draft_names]
+	base = draft_docs[0]
+
+	doc = frappe.new_doc("Sales Invoice")
+	doc.customer = customer
+	doc.pos_profile = base.pos_profile
+	doc.company = base.company
+	doc.currency = base.currency
+	doc.conversion_rate = base.conversion_rate or 1.0
+	doc.is_pos = base.is_pos
+	doc.update_stock = 1
+	doc.warehouse = base.warehouse
+	doc.set_warehouse = base.warehouse
+	doc.taxes_and_charges = base.taxes_and_charges
+	doc.posting_date = nowdate()
+	doc.posting_time = nowtime()
+	doc.set_posting_time = 1
+	doc.due_date = nowdate()
+	doc.custom_pos_opening_entry = opening_entry_name
+
+	# Carry forward any custom scalar fields from the base draft
+	for field in ("custom_exchange_rate_override", "custom_delivery_personnel",
+				  "cost_center"):
+		val = getattr(base, field, None)
+		if val:
+			setattr(doc, field, val)
+
+	# Merge items from all drafts (keep each line separate — preserves rate/discount)
+	for draft_doc in draft_docs:
+		for item in draft_doc.items:
+			doc.append("items", {
+				"item_code": item.item_code,
+				"qty": item.qty,
+				"rate": item.rate,
+				"price_list_rate": item.price_list_rate or item.rate,
+				"discount_percentage": flt(item.discount_percentage),
+				"discount_amount": flt(item.discount_amount),
+				"income_account": item.income_account,
+				"expense_account": item.expense_account,
+				"warehouse": item.warehouse,
+				"source_warehouse": item.source_warehouse or item.warehouse,
+				"cost_center": item.cost_center,
+				"uom": item.uom,
+				"conversion_factor": item.conversion_factor or 1,
+				"batch_no": item.batch_no or None,
+				"serial_no": item.serial_no or None,
+				"ignore_pricing_rule": item.ignore_pricing_rule or 0,
+			})
+
+	# Copy tax rows from the base draft (one set of taxes for the consolidated total)
+	for tax in base.taxes:
+		doc.append("taxes", {
+			"charge_type": tax.charge_type,
+			"account_head": tax.account_head,
+			"description": tax.description,
+			"cost_center": tax.cost_center,
+			"rate": tax.rate,
+			"row_id": tax.row_id,
+			"included_in_print_rate": tax.included_in_print_rate,
+			"custom_is_stamp": tax.get("custom_is_stamp") or 0,
+			"custom_stamp_amount_lbp": tax.get("custom_stamp_amount_lbp") or 0,
+		})
+
+	# Sum payments by mode_of_payment across all drafts
+	payment_sums = {}
+	for draft_doc in draft_docs:
+		for payment in draft_doc.payments:
+			mop = payment.mode_of_payment
+			payment_sums[mop] = payment_sums.get(mop, 0.0) + flt(payment.amount)
+
+	for mop, amount in payment_sums.items():
+		doc.append("payments", {"mode_of_payment": mop, "amount": amount})
+
+	return doc
+
+
 @frappe.whitelist()
 def create_closing_entry():
 	"""
@@ -236,6 +390,14 @@ def create_closing_entry():
 		frappe.logger().info(f"POS Closing Entry Data Received: {data}")
 
 		opening_entry = _get_open_pos_entry(user)
+
+		# When the POS Profile has "Consolidate Invoice on Close" enabled, all
+		# draft invoices must be submitted before the reconciliation figures are
+		# calculated — otherwise the payment totals would be zero.
+		pos_profile_name = opening_entry.get("pos_profile") if isinstance(opening_entry, dict) else getattr(opening_entry, "pos_profile", None)
+		if pos_profile_name and frappe.db.get_value("POS Profile", pos_profile_name, "custom_consolidate_invoicing"):
+			_consolidate_draft_invoices_for_closing(opening_entry.name if hasattr(opening_entry, "name") else opening_entry["name"])
+
 		payment_data = _calculate_payment_reconciliation(opening_entry, data)
 
 		doc = _create_and_submit_closing_doc(opening_entry, data, payment_data, user)

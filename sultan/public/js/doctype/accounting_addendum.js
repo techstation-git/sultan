@@ -63,9 +63,17 @@
 		const currency = row.account_currency || getCurrency(frm);
 		const usdAmount = currency === "LBP" ? amount / rate : amount;
 		const lbpAmount = currency === "LBP" ? amount : amount * rate;
+		const roundedLbp = Math.round(lbpAmount);
 
-		frappe.model.set_value(row.doctype, row.name, "custom_usd_amount", usdAmount);
-		frappe.model.set_value(row.doctype, row.name, "custom_lbp_amount", Math.round(lbpAmount));
+		// Only call set_value when the value actually changed — calling set_value
+		// unconditionally (even with the same value) can mark the parent form dirty
+		// which causes the "Not Saved" banner to reappear immediately after every save.
+		if (Math.abs(flt(row.custom_usd_amount) - usdAmount) > 0.001) {
+			frappe.model.set_value(row.doctype, row.name, "custom_usd_amount", usdAmount);
+		}
+		if (flt(row.custom_lbp_amount) !== roundedLbp) {
+			frappe.model.set_value(row.doctype, row.name, "custom_lbp_amount", roundedLbp);
+		}
 	}
 
 	function refreshDualCurrency(frm) {
@@ -110,12 +118,19 @@
 	function setupTransactionForm(doctype) {
 		frappe.ui.form.on(doctype, {
 			refresh(frm) {
-				if (!frm.doc.custom_exchange_rate_override) {
+				// Only set the default on new unsaved documents — the server hook sets it on save,
+				// and calling frm.set_value on an already-saved doc marks it dirty immediately.
+				if (frm.is_new() && !frm.doc.custom_exchange_rate_override) {
 					frm.set_value("custom_exchange_rate_override", DEFAULT_LBP_PER_USD);
 				}
 				attachEnterToAddRows(frm);
 				refreshDualCurrency(frm);
-				recalculateStampTaxes(frm);
+				// Do NOT call recalculateStampTaxes here. ERPNext rounds tax_amount to 2dp on
+				// save (e.g. 200 LBP / 89500 = 0.0022 → stored as 0.00). On reload the JS
+				// recomputes 0.0022 which differs from the stored 0.00 by > 0.001, so calling
+				// set_value marks the form dirty on every page load. The server-side
+				// _apply_stamp_taxes hook sets the correct value before each save; JS only
+				// recalculates when the user actually changes a stamp-related field.
 			},
 			custom_exchange_rate_override(frm) {
 				refreshDualCurrency(frm);

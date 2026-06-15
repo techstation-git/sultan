@@ -18,7 +18,7 @@ export default function LoginPage() {
   const [showPosPassword, setShowPosPassword] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { login } = useAuth()
+  const { login, loginAsEmployee } = useAuth()
 
   const handleAccountLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,6 +84,8 @@ export default function LoginPage() {
           (window as any).frappe = (window as any).frappe || {};
           (window as any).frappe.csrf_token = result.csrf_token;
         }
+        // Mark user as authenticated in React context so ProtectedRoute allows access
+        loginAsEmployee(result.employee || username, result.employee_name || username)
         const from = (location.state as any)?.from?.pathname || "/pos"
         navigate(from, { replace: true })
       } else {

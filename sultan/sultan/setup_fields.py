@@ -72,7 +72,8 @@ _TXN_TYPE_OPTIONS = "Cash In\nCash Out\nOpening Difference\nClosing Difference"
 
 
 def _upgrade_sultan_pos_cash_transaction_type():
-    """Ensure Sultan POS Cash Transaction.transaction_type has all 4 options and is read-only."""
+    """Ensure Sultan POS Cash Transaction has all 4 options and mode_of_payment field."""
+    # Ensure transaction_type has all 4 options and is read-only
     row = frappe.db.get_value(
         "DocField",
         {"parent": "Sultan POS Cash Transaction", "fieldname": "transaction_type"},
@@ -96,6 +97,37 @@ def _upgrade_sultan_pos_cash_transaction_type():
         print("Upgraded Sultan POS Cash Transaction.transaction_type options.")
     else:
         print("Sultan POS Cash Transaction.transaction_type already up-to-date.")
+
+    # Ensure mode_of_payment field exists (added after initial doctype creation)
+    mop_field = frappe.db.get_value(
+        "DocField",
+        {"parent": "Sultan POS Cash Transaction", "fieldname": "mode_of_payment"},
+        "name",
+    )
+    if not mop_field:
+        # Find the idx of pos_profile to insert after it
+        pos_profile_idx = frappe.db.get_value(
+            "DocField",
+            {"parent": "Sultan POS Cash Transaction", "fieldname": "pos_profile"},
+            "idx",
+        ) or 0
+        new_field = frappe.new_doc("DocField")
+        new_field.parent = "Sultan POS Cash Transaction"
+        new_field.parenttype = "DocType"
+        new_field.parentfield = "fields"
+        new_field.fieldname = "mode_of_payment"
+        new_field.label = "Mode of Payment"
+        new_field.fieldtype = "Link"
+        new_field.options = "Mode of Payment"
+        new_field.idx = pos_profile_idx + 1
+        new_field.insert(ignore_permissions=True)
+        # Add the actual DB column
+        if not frappe.db.has_column("Sultan POS Cash Transaction", "mode_of_payment"):
+            frappe.db.add_column("Sultan POS Cash Transaction", "mode_of_payment", "varchar(140)")
+        frappe.clear_cache(doctype="Sultan POS Cash Transaction")
+        print("Added mode_of_payment field to Sultan POS Cash Transaction.")
+    else:
+        print("Sultan POS Cash Transaction.mode_of_payment already exists.")
 
 
 def run():
@@ -222,6 +254,25 @@ def run():
 		print("Created custom_show_in_opening_entry field.")
 	else:
 		print("custom_show_in_opening_entry field already exists.")
+
+	# ── Consolidate Invoice on Close ─────────────────────────────────────────
+	consolidate_cf = "POS Profile-custom_consolidate_invoicing"
+	if not frappe.db.exists("Custom Field", consolidate_cf):
+		frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "POS Profile",
+			"fieldname": "custom_consolidate_invoicing",
+			"label": "Consolidate Invoice on Close",
+			"fieldtype": "Check",
+			"insert_after": "write_off_account",
+			"description": (
+				"When enabled, each order is saved as a draft (no GL or stock impact). "
+				"All drafts are submitted in batch when the session is closed."
+			),
+		}).insert(ignore_permissions=True)
+		print("Created custom_consolidate_invoicing on POS Profile.")
+	else:
+		print("custom_consolidate_invoicing already exists.")
 
 	# ── POS Print Format per terminal ────────────────────────────────────────
 	for fieldname, label, after in [
