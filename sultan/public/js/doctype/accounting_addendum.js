@@ -12,6 +12,30 @@
 		return flt(frm.doc.custom_exchange_rate_override) || DEFAULT_LBP_PER_USD;
 	}
 
+	function recalculateStampTaxes(frm) {
+		if (frm.doctype !== "Sales Invoice" && frm.doctype !== "Purchase Invoice") return;
+		const taxes = frm.doc.taxes || [];
+		const currency = frm.doc.currency || "USD";
+		const rate = getRate(frm);
+		let changed = false;
+
+		taxes.forEach(tax => {
+			if (!tax.custom_is_stamp || !flt(tax.custom_stamp_amount_lbp)) return;
+			const lbpAmount = flt(tax.custom_stamp_amount_lbp);
+			const taxAmount = currency === "LBP" ? lbpAmount : flt(lbpAmount / rate);
+
+			if (tax.charge_type !== "Actual" || flt(tax.rate) !== 0 ||
+				Math.abs(flt(tax.tax_amount) - taxAmount) > 0.001) {
+				frappe.model.set_value(tax.doctype, tax.name, "charge_type", "Actual");
+				frappe.model.set_value(tax.doctype, tax.name, "rate", 0);
+				frappe.model.set_value(tax.doctype, tax.name, "tax_amount", taxAmount);
+				changed = true;
+			}
+		});
+
+		if (changed) frm.refresh_field("taxes");
+	}
+
 	function getCurrency(frm) {
 		return frm.doc.currency || frm.doc.paid_from_account_currency || "USD";
 	}
@@ -91,12 +115,20 @@
 				}
 				attachEnterToAddRows(frm);
 				refreshDualCurrency(frm);
+				recalculateStampTaxes(frm);
 			},
-			custom_exchange_rate_override: refreshDualCurrency,
-			currency: refreshDualCurrency,
+			custom_exchange_rate_override(frm) {
+				refreshDualCurrency(frm);
+				recalculateStampTaxes(frm);
+			},
+			currency(frm) {
+				refreshDualCurrency(frm);
+				recalculateStampTaxes(frm);
+			},
 			paid_from_account_currency: refreshDualCurrency,
 			validate(frm) {
 				refreshDualCurrency(frm);
+				recalculateStampTaxes(frm);
 				syncPaymentEntryAmounts(frm);
 			},
 		});
@@ -146,4 +178,12 @@
 	function setRowDualCurrency(frm, cdt, cdn) {
 		setDualCurrencyValues(frm, locals[cdt][cdn]);
 	}
+	// Stamp tax — child table events
+	["Sales Taxes and Charges", "Purchase Taxes and Charges"].forEach(childDt => {
+		frappe.ui.form.on(childDt, {
+			custom_is_stamp(frm) { recalculateStampTaxes(frm); },
+			custom_stamp_amount_lbp(frm) { recalculateStampTaxes(frm); },
+		});
+	});
+
 })();

@@ -198,6 +198,13 @@ doc_events = {
 	},
 }
 
+# DocType Class Overrides
+# -----------------------
+override_doctype_class = {
+	"Sales Invoice": "sultan.sultan.api.sales_invoice.CustomSalesInvoice",
+	"Purchase Invoice": "sultan.sultan.api.purchase_invoice.CustomPurchaseInvoice",
+}
+
 # Scheduled Tasks
 # ---------------
 

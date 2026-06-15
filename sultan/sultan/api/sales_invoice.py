@@ -1694,7 +1694,63 @@ def get_writeoff_account():
 		return pos_profile.write_off_account
 
 
+
+def _is_stamp_account(doc, account):
+	"""Return True when `account` is used as a stamp tax line on `doc`."""
+	return any(
+		t.account_head == account and t.get("custom_is_stamp")
+		for t in (doc.taxes or [])
+	)
+
+
+def _fix_stamp_gl_entries(doc, gl_entries):
+	"""Overwrite GL amounts for stamp tax accounts with the exact LBP value."""
+	if not doc.get("taxes"):
+		return
+
+	stamp_map = {
+		t.account_head: flt(t.custom_stamp_amount_lbp)
+		for t in doc.taxes
+		if t.get("custom_is_stamp") and flt(t.get("custom_stamp_amount_lbp")) and t.account_head
+	}
+	if not stamp_map:
+		return
+
+	company_currency = frappe.db.get_value("Company", doc.company, "default_currency") or "LBP"
+	exchange_rate = flt(getattr(doc, "custom_exchange_rate_override", None)) or 89500
+
+	for gle in gl_entries:
+		lbp_amount = stamp_map.get(gle.get("account"))
+		if not lbp_amount:
+			continue
+
+		if company_currency == "LBP":
+			# Debit and credit are already in LBP; just force the exact integer
+			if gle.get("credit") or gle.get("credit_in_account_currency"):
+				gle["credit"] = lbp_amount
+				gle["credit_in_account_currency"] = lbp_amount
+			else:
+				gle["debit"] = lbp_amount
+				gle["debit_in_account_currency"] = lbp_amount
+		else:
+			# Company in USD: credit in USD, credit_in_account_currency in LBP
+			usd_amount = flt(lbp_amount / exchange_rate)
+			if gle.get("credit") or gle.get("credit_in_account_currency"):
+				gle["credit"] = usd_amount
+				gle["credit_in_account_currency"] = lbp_amount
+				gle["account_currency"] = "LBP"
+			else:
+				gle["debit"] = usd_amount
+				gle["debit_in_account_currency"] = lbp_amount
+				gle["account_currency"] = "LBP"
+
+
 class CustomSalesInvoice(SalesInvoice):
+	def validate_account_currency(self, account, account_currency=None):
+		if _is_stamp_account(self, account):
+			return
+		super().validate_account_currency(account, account_currency)
+
 	def get_gl_entries(self, warehouse_account=None):
 		from erpnext.accounts.general_ledger import merge_similar_entries
 
@@ -1722,6 +1778,7 @@ class CustomSalesInvoice(SalesInvoice):
 		self.make_write_off_gl_entry(gl_entries)
 		self.make_gle_for_rounding_adjustment(gl_entries)
 
+		_fix_stamp_gl_entries(self, gl_entries)
 		return gl_entries
 
 	def make_roundoff_gl_entry(self, gl_entries):

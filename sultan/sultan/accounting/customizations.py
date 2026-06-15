@@ -34,6 +34,7 @@ def setup_custom_fields():
 		+ _dual_currency_child_fields("Purchase Invoice Item", "amount")
 		+ _dual_currency_child_fields("Payment Entry Reference", "allocated_amount")
 		+ _dual_currency_child_fields("Journal Entry Account", "credit_in_account_currency")
+		+ _stamp_tax_fields()
 	)
 
 	count = 0
@@ -93,6 +94,52 @@ def _ensure_property_setter(dt, field, prop, value, prop_type="Data"):
 		ps.insert(ignore_permissions=True)
 
 
+def _stamp_tax_fields():
+	"""Custom fields for Lebanese Stamp Tax on tax child tables."""
+	fields = []
+	for dt in ("Sales Taxes and Charges", "Purchase Taxes and Charges"):
+		fields += [
+			{
+				"dt": dt,
+				"fieldname": "custom_is_stamp",
+				"label": "Is Stamp",
+				"fieldtype": "Check",
+				"insert_after": "description",
+				"in_list_view": 1,
+			},
+			{
+				"dt": dt,
+				"fieldname": "custom_stamp_amount_lbp",
+				"label": "Stamp Amount LBP",
+				"fieldtype": "Currency",
+				"insert_after": "custom_is_stamp",
+				"depends_on": "eval:doc.custom_is_stamp",
+				"mandatory_depends_on": "eval:doc.custom_is_stamp",
+				"precision": "0",
+			},
+		]
+	return fields
+
+
+def _apply_stamp_taxes(doc):
+	"""Force stamp-marked tax rows to Actual type with the correct LBP-derived amount."""
+	if not doc.get("taxes"):
+		return
+	exchange_rate = flt(getattr(doc, "custom_exchange_rate_override", None)) or DEFAULT_LBP_PER_USD
+	currency = getattr(doc, "currency", None) or ""
+
+	for tax in doc.taxes:
+		if not (tax.get("custom_is_stamp") and flt(tax.get("custom_stamp_amount_lbp"))):
+			continue
+		lbp_amount = flt(tax.custom_stamp_amount_lbp)
+		tax.charge_type = "Actual"
+		tax.rate = 0
+		if currency == "LBP":
+			tax.tax_amount = lbp_amount
+		else:
+			tax.tax_amount = flt(lbp_amount / exchange_rate)
+
+
 def _transaction_parent_fields(dt, insert_after, exchange_insert_after="currency"):
 	return [
 		{
@@ -143,6 +190,7 @@ def before_validate_transaction(doc, method=None):
 		return
 
 	ensure_exchange_rate(doc)
+	_apply_stamp_taxes(doc)
 	set_dual_currency_amounts(doc)
 	copy_transaction_description_to_remarks(doc)
 
