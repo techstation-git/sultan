@@ -14,6 +14,8 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [mode, setMode] = useState<'account' | 'pos'>('account')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showPosPassword, setShowPosPassword] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const { login } = useAuth()
@@ -154,15 +156,25 @@ export default function LoginPage() {
                       placeholder="Username or Email"
                       required
                     />
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-6 py-4 rounded-2xl focus:outline-none transition-all duration-300 font-bold"
-                      style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#f0eeff' }}
-                      placeholder="Password"
-                      required
-                    />
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full px-6 py-4 pr-14 rounded-2xl focus:outline-none transition-all duration-300 font-bold"
+                        style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#f0eeff' }}
+                        placeholder="Password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(v => !v)}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-ziditech-400 hover:text-white transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <>
@@ -216,16 +228,26 @@ export default function LoginPage() {
                   autoComplete="off"
                   required
                 />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-6 py-4 rounded-2xl focus:outline-none transition-all duration-300 font-bold"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#f0eeff' }}
-                  placeholder="POS Password"
-                  autoComplete="off"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showPosPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full px-6 py-4 pr-14 rounded-2xl focus:outline-none transition-all duration-300 font-bold"
+                    style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#f0eeff' }}
+                    placeholder="POS Password"
+                    autoComplete="off"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPosPassword(v => !v)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-ziditech-400 hover:text-white transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPosPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
 
               {error && (
@@ -259,6 +281,26 @@ function Loader2({ className }: { className?: string }) {
   return (
     <svg className={className} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+    </svg>
+  )
+}
+
+function Eye({ size = 24 }: { size?: number }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  )
+}
+
+function EyeOff({ size = 24 }: { size?: number }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+      <line x1="2" x2="22" y1="2" y2="22" />
     </svg>
   )
 }

@@ -266,6 +266,7 @@ def on_pos_opening_entry_submit(doc, method=None):
             mode_of_payment=row.mode_of_payment,
             description=desc,
             transaction_type="Opening Difference",
+            employee=doc.get("custom_employee"),
         )
 
 
