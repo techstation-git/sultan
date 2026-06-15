@@ -79,10 +79,22 @@ def employee_pos_login(username: str, password: str) -> dict:
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_pos_csrf_token() -> dict:
-    """Return the CSRF token for the current session (GET-safe, no CSRF needed)."""
-    return {"csrf_token": frappe.local.session.data.csrf_token}
+    """Return (or generate) the CSRF token for the current session.
+
+    allow_guest=True so the SPA can fetch a valid token before any login
+    attempt — prevents 400 errors caused by stale session cookies.
+    """
+    try:
+        token = frappe.local.session.data.get("csrf_token")
+        if not token:
+            token = frappe.generate_hash(length=32)
+            frappe.local.session.data.csrf_token = token
+            frappe.local.session.save()
+    except Exception:
+        token = ""
+    return {"csrf_token": token}
 
 
 @frappe.whitelist(allow_guest=False)
