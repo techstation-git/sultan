@@ -11,10 +11,21 @@ from sultan.sultan.api.sales_invoice import delete_draft_invoices_for_opening_en
 from sultan.sultan.utils import clear_pos_profile_cache, get_current_pos_profile
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_csrf_token():
-	"""Fetch the current authenticated session's CSRF token."""
-	return frappe.session.csrf_token
+	"""Fetch (or generate) the CSRF token for the current session.
+
+	allow_guest=True so the SPA can get a valid token before any login.
+	"""
+	try:
+		token = frappe.local.session.data.get("csrf_token")
+		if not token:
+			token = frappe.generate_hash(length=32)
+			frappe.local.session.data.csrf_token = token
+			frappe.local.session.save()
+	except Exception:
+		token = ""
+	return token
 
 
 @frappe.whitelist()
