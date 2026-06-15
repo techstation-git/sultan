@@ -68,6 +68,36 @@ def ensure_employee_pos_login_fields():
 	frappe.clear_cache(doctype="Employee")
 
 
+_TXN_TYPE_OPTIONS = "Cash In\nCash Out\nOpening Difference\nClosing Difference"
+
+
+def _upgrade_sultan_pos_cash_transaction_type():
+    """Ensure Sultan POS Cash Transaction.transaction_type has all 4 options and is read-only."""
+    row = frappe.db.get_value(
+        "DocField",
+        {"parent": "Sultan POS Cash Transaction", "fieldname": "transaction_type"},
+        ["name", "options", "read_only", "default"],
+        as_dict=True,
+    )
+    if not row:
+        return
+    needs_update = (
+        row.options != _TXN_TYPE_OPTIONS
+        or not row.read_only
+        or row.default != "Cash In"
+    )
+    if needs_update:
+        frappe.db.set_value("DocField", row.name, {
+            "options": _TXN_TYPE_OPTIONS,
+            "read_only": 1,
+            "default": "Cash In",
+        })
+        frappe.clear_cache(doctype="Sultan POS Cash Transaction")
+        print("Upgraded Sultan POS Cash Transaction.transaction_type options.")
+    else:
+        print("Sultan POS Cash Transaction.transaction_type already up-to-date.")
+
+
 def run():
 	setup_accounting_custom_fields()
 
@@ -229,7 +259,8 @@ def run():
 				{"fieldname": "naming_series", "label": "Series", "fieldtype": "Select",
 				 "options": "CASH-IO-.YYYY.-.####\n", "default": "CASH-IO-.YYYY.-.####", "reqd": 1},
 				{"fieldname": "transaction_type", "label": "Transaction Type", "fieldtype": "Select",
-				 "options": "Cash In\nCash Out", "reqd": 1, "in_list_view": 1},
+				 "options": "Cash In\nCash Out\nOpening Difference\nClosing Difference",
+				 "reqd": 1, "in_list_view": 1, "read_only": 1, "default": "Cash In"},
 				{"fieldname": "amount", "label": "Amount", "fieldtype": "Currency", "reqd": 1, "in_list_view": 1},
 				{"fieldname": "description", "label": "Description", "fieldtype": "Small Text", "in_list_view": 1},
 				{"fieldname": "col_break_1", "fieldtype": "Column Break"},
@@ -262,7 +293,8 @@ def run():
 		txn_doc.insert(ignore_permissions=True)
 		print("Created Sultan POS Cash Transaction doctype.")
 	else:
-		print("Sultan POS Cash Transaction already exists.")
+		# Upgrade existing DocType: ensure transaction_type has all 4 options and is read_only
+		_upgrade_sultan_pos_cash_transaction_type()
 
 	# ── Employee POS Login fields ─────────────────────────────────────────────
 	ensure_employee_pos_login_fields()
