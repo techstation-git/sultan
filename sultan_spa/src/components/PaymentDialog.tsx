@@ -919,10 +919,12 @@ export default function PaymentDialog({
       : currencies.baseCurrency;
 
     // Convert stored base amount ↔ secondary amount when toggling
+    // exchangeRate = base units per 1 secondary (e.g. 150 EGP/USD)
+    // base→secondary: divide; secondary→base: multiply
     const baseAmount = paymentAmounts[methodId] ?? 0;
     const newAmount = next === currencies.secondaryCurrency
-      ? parseFloat((baseAmount * currencies.exchangeRate).toFixed(0))
-      : parseFloat((baseAmount / currencies.exchangeRate).toFixed(2));
+      ? parseFloat((baseAmount / currencies.exchangeRate).toFixed(2))
+      : parseFloat((baseAmount * currencies.exchangeRate).toFixed(2));
 
     setPaymentCurrencies(prev => ({ ...prev, [methodId]: next }));
     // Don't auto-update paymentAmounts — user will re-enter in new currency
@@ -930,21 +932,23 @@ export default function PaymentDialog({
   };
 
   // When user types an amount in secondary currency, store the base equivalent
+  // exchangeRate = base per secondary (e.g. 150 EGP/USD), so base = secondary × rate
   const handleSecondaryAmountChange = (methodId: string, rawValue: string) => {
     const secondary = parseFloat(rawValue) || 0;
     const base = currencies.exchangeRate > 0
-      ? parseFloat((secondary / currencies.exchangeRate).toFixed(6))
+      ? parseFloat((secondary * currencies.exchangeRate).toFixed(6))
       : 0;
     setLastModifiedMethodId(methodId);
     setPaymentAmounts(prev => ({ ...prev, [methodId]: base }));
   };
 
   // Display value for an input: base or secondary depending on selected currency
+  // exchangeRate = base per secondary, so secondary = base / rate
   const getDisplayAmount = (methodId: string): string => {
     const base = paymentAmounts[methodId] ?? 0;
     if (isSecondary(methodId) && currencies.exchangeRate > 0) {
-      const sec = base * currencies.exchangeRate;
-      return sec === 0 ? "" : sec.toFixed(0);
+      const sec = base / currencies.exchangeRate;
+      return sec === 0 ? "" : sec.toFixed(2);
     }
     return base === 0 ? "" : base.toFixed(2);
   };
