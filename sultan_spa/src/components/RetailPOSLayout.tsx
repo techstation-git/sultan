@@ -6,12 +6,10 @@ import { usePOSDetails } from "../hooks/usePOSProfile"
 
 import MenuGrid from "./MenuGrid"
 import OrderSummary from "./OrderSummary"
-import MobilePOSLayout from "./MobilePOSLayout"
 import LoadingSpinner from "./LoadingSpinner"
 import BarcodeScannerModal from "./BarcodeScanner"
 import { useBarcodeScanner } from "../hooks/useBarcodeScanner"
 import type { MenuItem, GiftCoupon } from "../../types"
-import { useMediaQuery } from "../hooks/useMediaQuery"
 import { useCartStore } from "../stores/cartStore"
 import { toast } from "react-toastify"
 
@@ -51,8 +49,6 @@ export default function RetailPOSLayout() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const scalePrefix = (posDetails as any)?.custom_scale_barcodes_start_with || ""
 
-  // Use media query to detect mobile/tablet screens
-  const isMobile = useMediaQuery("(max-width: 768px)")
 
   const handleAddToCart = (item: MenuItem, quantity: number = 1) => {
     const isStockTracking = item.is_stock_item === 1 || item.is_stock_item === true
@@ -562,34 +558,7 @@ export default function RetailPOSLayout() {
     )
   }
 
-  // Render mobile layout for screens smaller than 1024px
-  if (isMobile) {
-    return (
-      <>
-        <MobilePOSLayout
-          items={filteredItems}
-          selectedCategory={selectedCategory}
-          onCategoryChange={setSelectedCategory}
-          searchQuery={localSearchQuery}
-          onSearchChange={handleSearchInput}
-          onScanBarcode={() => setShowScanner(true)}
-          scannerOnly={useScannerOnly}
-          hasMore={hasMore && !serverSearchQuery}
-          isLoadingMore={isLoadingMore}
-          onLoadMore={loadMoreProducts}
-          totalCount={totalCount}
-          isSearching={isSearching}
-        />
-        <BarcodeScannerModal
-          isOpen={showScanner}
-          onClose={() => setShowScanner(false)}
-          onBarcodeDetected={handleBarcodeDetected}
-        />
-      </>
-    )
-  }
-
-    // Desktop layout for larger screens
+  // POS always renders the full desktop layout with cart panel
   return (
     <>
       {scannerOnlyIndicator}
