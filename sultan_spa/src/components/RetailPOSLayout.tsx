@@ -52,7 +52,7 @@ export default function RetailPOSLayout() {
   const scalePrefix = (posDetails as any)?.custom_scale_barcodes_start_with || ""
 
   // Use media query to detect mobile/tablet screens
-  const isMobile = useMediaQuery("(max-width: 1024px)")
+  const isMobile = useMediaQuery("(max-width: 768px)")
 
   const handleAddToCart = (item: MenuItem, quantity: number = 1) => {
     const isStockTracking = item.is_stock_item === 1 || item.is_stock_item === true
