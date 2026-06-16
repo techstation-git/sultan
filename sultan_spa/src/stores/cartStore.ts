@@ -83,10 +83,8 @@ export const useCartStore = create<CartState>()(
             }
           }
 
-          const newCartItems = [...state.cartItems, { ...item, price: finalPrice, quantity: 1 }];
-
-          set((state) => ({
-            cartItems: newCartItems
+          set((currentState) => ({
+            cartItems: [...currentState.cartItems, { ...item, price: finalPrice, quantity: 1 }]
           }));
 
           // Apply pricing rules after adding item
@@ -139,10 +137,8 @@ export const useCartStore = create<CartState>()(
             }
           }
 
-          const newCartItems = [...state.cartItems, { ...item, price: finalPrice, quantity }];
-
-          set((state) => ({
-            cartItems: newCartItems
+          set((currentState) => ({
+            cartItems: [...currentState.cartItems, { ...item, price: finalPrice, quantity }]
           }));
 
           // Apply pricing rules after adding item

@@ -595,7 +595,7 @@ export default function RetailPOSLayout() {
       {scannerOnlyIndicator}
       <div className="flex h-screen bg-gray-50 dark:bg-gray-900 pb-8">
         {/* Menu Section - Takes remaining space minus cart width */}
-        <div className="flex-1 overflow-visible ml-28">
+        <div className="flex-1 overflow-visible">
           <MenuGrid
             items={filteredItems}
             selectedCategory={selectedCategory}
