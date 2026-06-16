@@ -800,9 +800,9 @@ export default function ClosingShiftPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex pb-12">
-      <div className="flex-1 flex flex-col overflow-hidden ml-20">
+      <div className="flex-1 flex flex-col overflow-hidden ml-28">
         {/* Header */}
-        <div className="fixed top-0 left-20 right-0 z-50 bg-ziditech-50 dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div className="fixed top-0 left-28 right-0 z-50 bg-ziditech-50 dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
           <div className="px-4 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
