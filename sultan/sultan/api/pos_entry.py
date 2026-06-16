@@ -342,7 +342,6 @@ def _build_consolidated_invoice(customer, draft_names, opening_entry_name):
 				"income_account": item.income_account,
 				"expense_account": item.expense_account,
 				"warehouse": item.warehouse,
-				"source_warehouse": item.source_warehouse or item.warehouse,
 				"cost_center": item.cost_center,
 				"uom": item.uom,
 				"conversion_factor": item.conversion_factor or 1,
