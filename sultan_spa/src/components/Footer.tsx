@@ -12,7 +12,7 @@ export default function Footer() {
   }
 
   return (
-    <footer className="fixed bottom-0 left-20 right-0 z-50 bg-white border-t border-gray-200">
+    <footer className="fixed bottom-0 left-28 right-0 z-50 bg-white border-t border-gray-200">
       <div className="w-full py-2 flex justify-between items-center px-6">
 
         <div className="text-[10px] font-black text-ziditech-600 uppercase tracking-[0.2em]">
