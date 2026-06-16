@@ -261,7 +261,7 @@ def run():
 			"cf_name": "POS Profile-custom_multi_currency_section",
 			"dt": "POS Profile", "fieldname": "custom_multi_currency_section",
 			"label": "Multi-Currency Payments", "fieldtype": "Section Break",
-			"insert_after": "project",
+			"insert_after": "disable_rounded_total",
 		},
 		{
 			"cf_name": "POS Profile-custom_enable_multi_currency",
