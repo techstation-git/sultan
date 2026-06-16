@@ -137,7 +137,9 @@
   {
    "fieldname": "journal_entry",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Journal Entry",
+   "no_copy": 1,
    "options": "Journal Entry",
    "read_only": 1
   }

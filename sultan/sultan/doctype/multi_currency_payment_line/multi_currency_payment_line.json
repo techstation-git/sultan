@@ -6,10 +6,10 @@
  "engine": "InnoDB",
  "field_order": [
   "amount",
+  "mode_of_payment",
   "currency",
   "exchange_rate",
   "amount_base_currency",
-  "mode_of_payment",
   "remarks",
   "amount_usd",
   "amount_lbp"
@@ -30,6 +30,7 @@
    "in_list_view": 1,
    "label": "Currency",
    "options": "Currency",
+   "read_only": 1,
    "reqd": 1,
    "columns": 2
   },
