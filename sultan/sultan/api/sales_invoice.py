@@ -1354,14 +1354,31 @@ def _populate_tax_details(doc):
 
 
 def _add_payment_entries(doc, mode_of_payment):
-	"""Add payment entries to the invoice."""
+	"""Add payment entries to the invoice.
+
+	Each entry may optionally include currency/exchange_rate fields for
+	multi-currency transactions.  The amount stored on the invoice is always
+	in the invoice's base currency; conversion is performed here when the
+	payment currency differs from the invoice currency.
+	"""
 	if not isinstance(mode_of_payment, list):
 		return
 
+	from frappe.utils import flt
+
 	for payment in mode_of_payment:
+		amount = flt(payment.get("amount", 0))
+		pay_currency = payment.get("currency")
+		exchange_rate = flt(payment.get("exchange_rate", 0))
+
+		# Convert secondary-currency amount → invoice base currency
+		if pay_currency and pay_currency != doc.currency and exchange_rate > 0:
+			amount = amount / exchange_rate
+
+		amount = round(amount, 6)
 		doc.append(
 			"payments",
-			{"mode_of_payment": payment["method"], "amount": payment["amount"]},
+			{"mode_of_payment": payment["method"], "amount": amount},
 		)
 
 

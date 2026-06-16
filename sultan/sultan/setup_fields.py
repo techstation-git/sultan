@@ -255,6 +255,49 @@ def run():
 	else:
 		print("custom_show_in_opening_entry field already exists.")
 
+	# ── Multi-Currency Payment ───────────────────────────────────────────────
+	for cf_def in [
+		{
+			"cf_name": "POS Profile-custom_multi_currency_section",
+			"dt": "POS Profile", "fieldname": "custom_multi_currency_section",
+			"label": "Multi-Currency Payments", "fieldtype": "Section Break",
+			"insert_after": "write_off_account",
+		},
+		{
+			"cf_name": "POS Profile-custom_enable_multi_currency",
+			"dt": "POS Profile", "fieldname": "custom_enable_multi_currency",
+			"label": "Enable Multi-Currency", "fieldtype": "Check",
+			"insert_after": "custom_multi_currency_section",
+			"description": "Allow cashiers to accept payment in a secondary currency (e.g., LBP alongside USD).",
+		},
+		{
+			"cf_name": "POS Profile-custom_secondary_currency",
+			"dt": "POS Profile", "fieldname": "custom_secondary_currency",
+			"label": "Secondary Currency", "fieldtype": "Link",
+			"options": "Currency",
+			"insert_after": "custom_enable_multi_currency",
+			"depends_on": "eval:doc.custom_enable_multi_currency",
+		},
+		{
+			"cf_name": "POS Profile-custom_exchange_rate",
+			"dt": "POS Profile", "fieldname": "custom_exchange_rate",
+			"label": "Exchange Rate (Secondary per Base)", "fieldtype": "Float",
+			"precision": "2",
+			"insert_after": "custom_secondary_currency",
+			"depends_on": "eval:doc.custom_enable_multi_currency",
+			"description": "Units of secondary currency per 1 unit of base currency (e.g., 89500 if 1 USD = 89,500 LBP).",
+		},
+	]:
+		cf_name = cf_def.pop("cf_name")
+		if not frappe.db.exists("Custom Field", cf_name):
+			doc = frappe.new_doc("Custom Field")
+			for k, v in cf_def.items():
+				setattr(doc, k, v)
+			doc.insert(ignore_permissions=True)
+			print(f"Created {cf_name}.")
+		else:
+			print(f"{cf_name} already exists.")
+
 	# ── Consolidate Invoice on Close ─────────────────────────────────────────
 	consolidate_cf = "POS Profile-custom_consolidate_invoicing"
 	if not frappe.db.exists("Custom Field", consolidate_cf):

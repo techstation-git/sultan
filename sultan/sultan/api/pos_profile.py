@@ -219,7 +219,15 @@ def get_pos_details():
 		"custom_ignore_write_off_on_partial_returns": getattr(pos, "custom_ignore_write_off_on_partial_returns", 1.0),
 		"custom_delivery_required": int(getattr(pos, "custom_delivery_required", 0) or 0),
 		"allow_discount_change": getattr(pos, "allow_discount_change", 0),
-		"role": active_role
+		"role": active_role,
+		# Multi-currency
+		"custom_enable_multi_currency": int(getattr(pos, "custom_enable_multi_currency", 0) or 0),
+		"custom_secondary_currency": getattr(pos, "custom_secondary_currency", None) or None,
+		"custom_secondary_currency_symbol": (
+			frappe.db.get_value("Currency", getattr(pos, "custom_secondary_currency", None), "symbol")
+			if getattr(pos, "custom_secondary_currency", None) else None
+		),
+		"custom_exchange_rate": float(getattr(pos, "custom_exchange_rate", 0) or 0),
 	}
 	return details
 

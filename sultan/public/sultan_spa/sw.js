@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sultan-pos-v1781617135982';
+const CACHE_NAME = 'sultan-pos-v1781617585511';
 const URLS_TO_CACHE = [
   "/sultan_spa/",
   "/assets/sultan/sultan_spa/favicon.png",
@@ -6,8 +6,8 @@ const URLS_TO_CACHE = [
   "/assets/sultan/sultan_spa/manifest.json",
   "/assets/sultan/logo.png",
   "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Tajawal:wght@400;500;700&display=swap",
-  "/assets/sultan/sultan_spa/assets/index-Cla6e8CD.css",
-  "/assets/sultan/sultan_spa/assets/index-k7sGp9hZ.js"
+  "/assets/sultan/sultan_spa/assets/index-B9WPdgjR.js",
+  "/assets/sultan/sultan_spa/assets/index-Cla6e8CD.css"
 ];
 
 self.addEventListener('install', event => {

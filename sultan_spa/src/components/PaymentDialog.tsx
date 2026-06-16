@@ -35,6 +35,7 @@ import { toast } from "react-toastify";
 import { usePaymentModes } from "../hooks/usePaymentModes";
 import { useSalesTaxCharges } from "../hooks/useSalesTaxCharges";
 import { usePOSDetails } from "../hooks/usePOSProfile";
+import { usePOSCurrencies } from "../hooks/usePOSCurrencies";
 import { createDraftSalesInvoice } from "../services/salesInvoice";
 import { createSalesInvoice } from "../services/salesInvoice";
 import { useNavigate } from "react-router-dom";
@@ -187,8 +188,13 @@ export default function PaymentDialog({
   const [selectedDeliveryPersonnel, setSelectedDeliveryPersonnel] = useState<string | null>(null);
   const [receiptLanguage, setReceiptLanguage] = useState<"en" | "ar">("en");
 
+  // Multi-currency: tracks which currency each payment method is using
+  // key = methodId, value = currency code (base or secondary)
+  const [paymentCurrencies, setPaymentCurrencies] = useState<Record<string, string>>({});
+
   // Hooks
   const { posDetails, loading: posLoading } = usePOSDetails();
+  const currencies = usePOSCurrencies();
   const { modes, isLoading, error } = usePaymentModes(typeof posDetails?.name === 'string' ? posDetails.name : '');
   const { salesTaxCharges, defaultTax } = useSalesTaxCharges();
   const { personnel: deliveryPersonnelList } = useDeliveryPersonnel();
@@ -898,6 +904,51 @@ export default function PaymentDialog({
     }
   };
 
+  // --- Multi-currency helpers ---
+  const getMethodCurrency = (methodId: string) =>
+    paymentCurrencies[methodId] ?? currencies.baseCurrency;
+
+  const isSecondary = (methodId: string) =>
+    currencies.enabled && getMethodCurrency(methodId) === currencies.secondaryCurrency;
+
+  const toggleMethodCurrency = (methodId: string) => {
+    if (!currencies.enabled || !currencies.secondaryCurrency) return;
+    const current = getMethodCurrency(methodId);
+    const next = current === currencies.baseCurrency
+      ? currencies.secondaryCurrency
+      : currencies.baseCurrency;
+
+    // Convert stored base amount ↔ secondary amount when toggling
+    const baseAmount = paymentAmounts[methodId] ?? 0;
+    const newAmount = next === currencies.secondaryCurrency
+      ? parseFloat((baseAmount * currencies.exchangeRate).toFixed(0))
+      : parseFloat((baseAmount / currencies.exchangeRate).toFixed(2));
+
+    setPaymentCurrencies(prev => ({ ...prev, [methodId]: next }));
+    // Don't auto-update paymentAmounts — user will re-enter in new currency
+    void newAmount; // suppress unused warning
+  };
+
+  // When user types an amount in secondary currency, store the base equivalent
+  const handleSecondaryAmountChange = (methodId: string, rawValue: string) => {
+    const secondary = parseFloat(rawValue) || 0;
+    const base = currencies.exchangeRate > 0
+      ? parseFloat((secondary / currencies.exchangeRate).toFixed(6))
+      : 0;
+    setLastModifiedMethodId(methodId);
+    setPaymentAmounts(prev => ({ ...prev, [methodId]: base }));
+  };
+
+  // Display value for an input: base or secondary depending on selected currency
+  const getDisplayAmount = (methodId: string): string => {
+    const base = paymentAmounts[methodId] ?? 0;
+    if (isSecondary(methodId) && currencies.exchangeRate > 0) {
+      const sec = base * currencies.exchangeRate;
+      return sec === 0 ? "" : sec.toFixed(0);
+    }
+    return base === 0 ? "" : base.toFixed(2);
+  };
+
   const processPayment = async (deliveryPersonnel: string | null = null) => {
     if (!selectedCustomer || !selectedCustomer.name) {
       toast.error("Kindly select a customer");
@@ -986,7 +1037,12 @@ export default function PaymentDialog({
           discountAmount: itemDiscounts[item.id]?.discountAmount || 0,
         })),
       customer: selectedCustomer,
-      paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => ({ method, amount: parseFloat((Number(amount) || 0).toFixed(2)) })),
+      paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => ({
+        method,
+        amount: parseFloat((Number(amount) || 0).toFixed(6)),
+        currency: getMethodCurrency(method as string),
+        exchange_rate: currencies.exchangeRate,
+      })),
       subtotal: calculations.subtotal,
       SalesTaxCharges: selectedSalesTaxCharges,
       taxAmount: calculations.taxAmount,
@@ -1383,18 +1439,32 @@ export default function PaymentDialog({
                             </div>
                           </div>
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                              Amount
-                            </label>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Amount
+                              </label>
+                              {currencies.enabled && currencies.secondaryCurrency && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleMethodCurrency(method.id)}
+                                  disabled={invoiceSubmitted || isProcessingPayment}
+                                  className="text-xs px-2 py-0.5 rounded-full border border-ziditech-400 text-ziditech-600 hover:bg-ziditech-50 font-semibold transition-colors"
+                                  title="Toggle currency"
+                                >
+                                  {getMethodCurrency(method.id)}
+                                </button>
+                              )}
+                            </div>
                             <input
                               type="number"
-                              value={method.amount.toFixed(2) || ""}
-                              onChange={(e) =>
-                                handlePaymentAmountChange(
-                                  method.id,
-                                  e.target.value
-                                )
-                              }
+                              value={getDisplayAmount(method.id)}
+                              onChange={(e) => {
+                                if (isSecondary(method.id)) {
+                                  handleSecondaryAmountChange(method.id, e.target.value);
+                                } else {
+                                  handlePaymentAmountChange(method.id, e.target.value);
+                                }
+                              }}
                               placeholder="0.00"
                               disabled={invoiceSubmitted || isProcessingPayment}
                               className={`w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-ziditech-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white ${
@@ -1403,6 +1473,11 @@ export default function PaymentDialog({
                                   : ""
                               }`}
                             />
+                            {isSecondary(method.id) && (paymentAmounts[method.id] ?? 0) > 0 && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                ≈ {currencies.baseSymbol}{(paymentAmounts[method.id] ?? 0).toFixed(2)} {currencies.baseCurrency}
+                              </p>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -2117,7 +2192,18 @@ export default function PaymentDialog({
                             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
                               Amount
                             </label>
-                            <div className="flex space-x-1">
+                            <div className="flex items-center space-x-1">
+                              {currencies.enabled && currencies.secondaryCurrency && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleMethodCurrency(method.id)}
+                                  disabled={invoiceSubmitted || isProcessingPayment}
+                                  className="text-[10px] px-1.5 py-0.5 rounded-full border border-ziditech-400 text-ziditech-600 hover:bg-ziditech-50 font-bold transition-colors"
+                                  title="Toggle currency"
+                                >
+                                  {getMethodCurrency(method.id)}
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleAutoFillPayment(method.id)}
                                 disabled={invoiceSubmitted || isProcessingPayment}
@@ -2130,31 +2216,32 @@ export default function PaymentDialog({
                               >
                                 <CheckCircle size={16} />
                               </button>
-
                             </div>
                           </div>
                           <input
                             type="number"
-                            step="0.01"
-                            value={method.amount || ""}
+                            step={isSecondary(method.id) ? "1" : "0.01"}
+                            value={getDisplayAmount(method.id)}
                             onChange={(e) => {
                               setActiveMethodId(method.id);
-                              const inputValue = e.target.value;
-                              const numValue =
-                                inputValue === "" ? 0 : parseFloat(inputValue);
-                              handleManualAmountChange(
-                                method.id,
-                                isNaN(numValue) ? "0" : numValue.toString()
-                              );
+                              if (isSecondary(method.id)) {
+                                handleSecondaryAmountChange(method.id, e.target.value);
+                              } else {
+                                const inputValue = e.target.value;
+                                const numValue = inputValue === "" ? 0 : parseFloat(inputValue);
+                                handleManualAmountChange(
+                                  method.id,
+                                  isNaN(numValue) ? "0" : numValue.toString()
+                                );
+                              }
                             }}
                             onBlur={(e) => {
                               setActiveMethodId(method.id);
-                              const numValue = parseFloat(e.target.value);
-                              if (!isNaN(numValue)) {
-                                const formatted = parseFloat(
-                                  numValue.toFixed(2)
-                                );
-                                handleManualAmountChange(method.id, formatted.toString());
+                              if (!isSecondary(method.id)) {
+                                const numValue = parseFloat(e.target.value);
+                                if (!isNaN(numValue)) {
+                                  handleManualAmountChange(method.id, parseFloat(numValue.toFixed(2)).toString());
+                                }
                               }
                             }}
                             placeholder="0.00"
@@ -2165,6 +2252,11 @@ export default function PaymentDialog({
                                 : ""
                             }`}
                           />
+                          {isSecondary(method.id) && (paymentAmounts[method.id] ?? 0) > 0 && (
+                            <p className="text-xs text-gray-500 mt-1">
+                              ≈ {currencies.baseSymbol}{(paymentAmounts[method.id] ?? 0).toFixed(2)} {currencies.baseCurrency}
+                            </p>
+                          )}
                         </div>
                       </div>
                     ))}
