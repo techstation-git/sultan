@@ -85,20 +85,20 @@ export default function RetailSidebar() {
             </button>
           )
         })}
-      </div>
 
-      {/* Cash I/O button — only when pos_cash_in_out is installed & enabled for this profile */}
-      {!isMenuUser && cashIO.enabled && (
-        <button
-          onClick={() => setShowCashIO(true)}
-          title="Cash In / Cash Out"
-          style={{ color: 'white' }}
-          className="w-13 h-13 px-2 py-2.5 rounded-xl flex flex-col items-center justify-center transition-all duration-150 cursor-pointer active:scale-90 hover:bg-white/10"
-        >
-          <ArrowLeftRight size={20} strokeWidth={2.5} />
-          <span style={{ color: 'white' }} className="text-[10px] font-bold mt-1 uppercase tracking-wide">CASH</span>
-        </button>
-      )}
+        {/* Cash I/O button — inside menu list so spacing matches other items */}
+        {!isMenuUser && cashIO.enabled && (
+          <button
+            onClick={() => setShowCashIO(true)}
+            title="Cash In / Cash Out"
+            style={{ color: 'white' }}
+            className="w-13 h-13 px-2 py-2.5 rounded-xl flex flex-col items-center justify-center transition-all duration-150 cursor-pointer active:scale-90 hover:bg-white/10"
+          >
+            <ArrowLeftRight size={20} strokeWidth={2.5} />
+            <span style={{ color: 'white' }} className="text-[10px] font-bold mt-1 uppercase tracking-wide">CASH</span>
+          </button>
+        )}
+      </div>
 
       {/* Connection status indicator */}
       <div className="px-3 py-2 border-t border-white/10 flex flex-col items-center">
