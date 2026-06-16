@@ -241,7 +241,7 @@ def _consolidate_draft_invoices_for_closing(opening_entry_name):
 		filters={"custom_pos_opening_entry": opening_entry_name, "docstatus": 0},
 		fields=[
 			"name", "customer", "pos_profile", "company", "currency",
-			"conversion_rate", "warehouse", "is_pos", "taxes_and_charges",
+			"conversion_rate", "set_warehouse", "is_pos", "taxes_and_charges",
 		],
 		order_by="creation asc",
 	)
@@ -314,8 +314,7 @@ def _build_consolidated_invoice(customer, draft_names, opening_entry_name):
 	doc.conversion_rate = base.conversion_rate or 1.0
 	doc.is_pos = base.is_pos
 	doc.update_stock = 1
-	doc.warehouse = base.warehouse
-	doc.set_warehouse = base.warehouse
+	doc.set_warehouse = base.set_warehouse
 	doc.taxes_and_charges = base.taxes_and_charges
 	doc.posting_date = nowdate()
 	doc.posting_time = nowtime()
