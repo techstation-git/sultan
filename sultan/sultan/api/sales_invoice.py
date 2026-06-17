@@ -1400,6 +1400,8 @@ def _add_payment_entries(doc, mode_of_payment):
 		# Convert secondary-currency amount → invoice base currency
 		# exchange_rate convention: base units per 1 secondary unit (e.g. 250 EGP per 1 USD)
 		# so: secondary_amount × exchange_rate = base_amount
+		original_amount = amount
+		original_currency = pay_currency or doc.currency
 		if pay_currency and pay_currency != doc.currency and exchange_rate > 0:
 			amount = amount * exchange_rate
 			# Auto-save today's rate so ERPNext resolves it for all subsequent transactions
@@ -1408,7 +1410,12 @@ def _add_payment_entries(doc, mode_of_payment):
 		amount = round(amount, 6)
 		doc.append(
 			"payments",
-			{"mode_of_payment": payment["method"], "amount": amount},
+			{
+				"mode_of_payment": payment["method"],
+				"amount": amount,
+				"custom_payment_currency": original_currency,
+				"custom_payment_original_amount": round(original_amount, 6),
+			},
 		)
 
 

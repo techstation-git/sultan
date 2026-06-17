@@ -2696,19 +2696,25 @@ export default function PaymentDialog({
                         </p>
                         {Object.entries(paymentAmounts)
                           .filter(([, amount]) => amount > 0)
-                          .map(([method, amount]) => (
-                            <div
-                              key={method}
-                              className="flex justify-between text-xs"
-                            >
-                              <span className="text-gray-600 dark:text-gray-400">
-                                {method}
-                              </span>
-                              <span className="text-gray-900 dark:text-white">
-                                {formatCurrency(amount)}
-                              </span>
-                            </div>
-                          ))}
+                          .map(([method, amount]) => {
+                            const mCurrency = getMethodCurrency(method);
+                            const isSecondary = currencies.enabled && mCurrency !== currencies.baseCurrency;
+                            const rate = getExchangeRate(mCurrency);
+                            const secAmount = isSecondary && rate > 0 ? amount / rate : null;
+                            return (
+                              <div key={method} className="flex justify-between text-xs">
+                                <span className="text-gray-600 dark:text-gray-400">
+                                  {method}
+                                </span>
+                                <span className="text-gray-900 dark:text-white text-right">
+                                  {secAmount !== null
+                                    ? <>{secAmount.toFixed(2)} {mCurrency}<br/><span className="text-gray-400">{formatCurrency(amount)}</span></>
+                                    : formatCurrency(amount)
+                                  }
+                                </span>
+                              </div>
+                            );
+                          })}
                       </div>
                     )}
 
