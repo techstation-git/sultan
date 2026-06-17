@@ -1372,8 +1372,10 @@ def _add_payment_entries(doc, mode_of_payment):
 		exchange_rate = flt(payment.get("exchange_rate", 0))
 
 		# Convert secondary-currency amount → invoice base currency
+		# exchange_rate convention: base units per 1 secondary unit (e.g. 250 EGP per 1 USD)
+		# so: secondary_amount × exchange_rate = base_amount
 		if pay_currency and pay_currency != doc.currency and exchange_rate > 0:
-			amount = amount / exchange_rate
+			amount = amount * exchange_rate
 
 		amount = round(amount, 6)
 		doc.append(

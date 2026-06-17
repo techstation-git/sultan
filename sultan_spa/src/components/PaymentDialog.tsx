@@ -1104,11 +1104,18 @@ export default function PaymentDialog({
       customer: selectedCustomer,
       paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => {
         const mCurrency = getMethodCurrency(method as string);
+        const baseAmount = Number(amount) || 0;
+        const rate = getExchangeRate(mCurrency);
+        const isSecondaryCurrency = currencies.enabled && mCurrency !== currencies.baseCurrency && rate > 0;
+        // Backend expects secondary-currency amount; it multiplies by exchange_rate to get base
+        const sendAmount = isSecondaryCurrency
+          ? parseFloat((baseAmount / rate).toFixed(6))
+          : parseFloat(baseAmount.toFixed(6));
         return {
           method,
-          amount: parseFloat((Number(amount) || 0).toFixed(6)),
+          amount: sendAmount,
           currency: mCurrency,
-          exchange_rate: getExchangeRate(mCurrency),
+          exchange_rate: rate,
         };
       }),
       subtotal: calculations.subtotal,
