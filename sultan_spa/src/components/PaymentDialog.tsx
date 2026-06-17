@@ -191,7 +191,7 @@ export default function PaymentDialog({
   // Multi-currency: tracks which currency each payment method is using
   // key = methodId, value = currency code (base or secondary)
   const [paymentCurrencies, setPaymentCurrencies] = useState<Record<string, string>>({});
-  // Per-session exchange rate overrides (cashier edits)
+  // Per-session exchange rate overrides (cashier edits) — seeded from today's Currency Exchange records
   const [sessionRates, setSessionRates] = useState<Record<string, number>>({});
   // Raw string values for exchange rate inputs (allows clearing while typing)
   const [sessionRateInputs, setSessionRateInputs] = useState<Record<string, string>>({});
@@ -267,6 +267,29 @@ export default function PaymentDialog({
       console.log("POS Details - custom_delivery_required:", deliveryRequiredValue, "isDeliveryRequired:", isDeliveryRequired);
     }
   }, [posDetails, deliveryRequiredValue, isDeliveryRequired]);
+
+  // Seed session rates from today's Currency Exchange records so the cashier
+  // doesn't have to re-enter the rate on every transaction
+  useEffect(() => {
+    if (!currencies.enabled || currencies.secondaryCurrencies.length === 0) return;
+    const secondary = currencies.secondaryCurrencies.map(c => c.currency);
+    frappe.call({
+      method: "sultan.sultan.api.sales_invoice.get_today_exchange_rates",
+      args: { currencies: secondary, base_currency: currencies.baseCurrency },
+      callback: (r: { message?: Record<string, number> }) => {
+        if (r.message && Object.keys(r.message).length > 0) {
+          setSessionRates(prev => ({ ...r.message, ...prev }));
+          setSessionRateInputs(prev => {
+            const updates: Record<string, string> = {};
+            for (const [cur, rate] of Object.entries(r.message!)) {
+              if (!prev[cur]) updates[cur] = String(rate);
+            }
+            return { ...updates, ...prev };
+          });
+        }
+      },
+    });
+  }, [currencies.enabled, currencies.baseCurrency, currencies.secondaryCurrencies.length]);
 
   // Populate sharing data from external invoice data
   useEffect(() => {

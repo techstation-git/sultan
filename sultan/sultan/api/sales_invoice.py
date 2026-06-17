@@ -2571,3 +2571,41 @@ def submit_draft_invoice(invoice_id):
 	except Exception as e:
 		frappe.log_error(frappe.get_traceback(), f"Error submitting draft invoice {invoice_id}")
 		return {"success": False, "error": str(e)}
+
+
+@frappe.whitelist()
+def get_today_exchange_rates(currencies, base_currency):
+	"""Return today's exchange rates for the given secondary currencies.
+
+	Looks up the Currency Exchange table for records dated today.
+	Falls back to the most recent record for each currency if today
+	has no entry.  The frontend uses this to pre-fill the rate input
+	so the cashier does not have to re-enter it every transaction.
+	"""
+	if isinstance(currencies, str):
+		currencies = json.loads(currencies)
+
+	from frappe.utils import nowdate
+	today = nowdate()
+	result = {}
+
+	for currency in currencies:
+		if currency == base_currency:
+			continue
+		# Prefer today's record; fall back to most recent
+		rate = frappe.db.get_value(
+			"Currency Exchange",
+			{"from_currency": currency, "to_currency": base_currency, "date": today},
+			"exchange_rate",
+		)
+		if not rate:
+			rate = frappe.db.get_value(
+				"Currency Exchange",
+				{"from_currency": currency, "to_currency": base_currency},
+				"exchange_rate",
+				order_by="date desc",
+			)
+		if rate:
+			result[currency] = flt(rate)
+
+	return result
