@@ -1353,6 +1353,32 @@ def _populate_tax_details(doc):
 		)
 
 
+def _upsert_currency_exchange(from_currency, to_currency, exchange_rate, date):
+	"""Create or update today's Currency Exchange record so ERPNext can resolve
+	the rate automatically for any transaction that happens after this payment."""
+	if not (from_currency and to_currency and exchange_rate > 0):
+		return
+	if from_currency == to_currency:
+		return
+	try:
+		existing = frappe.db.get_value(
+			"Currency Exchange",
+			{"from_currency": from_currency, "to_currency": to_currency, "date": date},
+			"name",
+		)
+		if existing:
+			frappe.db.set_value("Currency Exchange", existing, "exchange_rate", exchange_rate)
+		else:
+			ce = frappe.new_doc("Currency Exchange")
+			ce.from_currency = from_currency
+			ce.to_currency = to_currency
+			ce.exchange_rate = exchange_rate
+			ce.date = date
+			ce.insert(ignore_permissions=True)
+	except Exception:
+		pass  # Non-fatal — payment still proceeds even if exchange record fails
+
+
 def _add_payment_entries(doc, mode_of_payment):
 	"""Add payment entries to the invoice.
 
@@ -1364,7 +1390,7 @@ def _add_payment_entries(doc, mode_of_payment):
 	if not isinstance(mode_of_payment, list):
 		return
 
-	from frappe.utils import flt
+	from frappe.utils import flt, nowdate
 
 	for payment in mode_of_payment:
 		amount = flt(payment.get("amount", 0))
@@ -1376,6 +1402,8 @@ def _add_payment_entries(doc, mode_of_payment):
 		# so: secondary_amount × exchange_rate = base_amount
 		if pay_currency and pay_currency != doc.currency and exchange_rate > 0:
 			amount = amount * exchange_rate
+			# Auto-save today's rate so ERPNext resolves it for all subsequent transactions
+			_upsert_currency_exchange(pay_currency, doc.currency, exchange_rate, nowdate())
 
 		amount = round(amount, 6)
 		doc.append(
