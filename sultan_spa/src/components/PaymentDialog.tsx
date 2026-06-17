@@ -191,6 +191,8 @@ export default function PaymentDialog({
   // Multi-currency: tracks which currency each payment method is using
   // key = methodId, value = currency code (base or secondary)
   const [paymentCurrencies, setPaymentCurrencies] = useState<Record<string, string>>({});
+  // Per-session exchange rate overrides (cashier edits)
+  const [sessionRates, setSessionRates] = useState<Record<string, number>>({});
 
   // Hooks
   const { posDetails, loading: posLoading } = usePOSDetails();
@@ -909,48 +911,102 @@ export default function PaymentDialog({
     paymentCurrencies[methodId] ?? currencies.baseCurrency;
 
   const isSecondary = (methodId: string) =>
-    currencies.enabled && getMethodCurrency(methodId) === currencies.secondaryCurrency;
+    currencies.enabled && getMethodCurrency(methodId) !== currencies.baseCurrency;
 
-  const toggleMethodCurrency = (methodId: string) => {
-    if (!currencies.enabled || !currencies.secondaryCurrency) return;
-    const current = getMethodCurrency(methodId);
-    const next = current === currencies.baseCurrency
-      ? currencies.secondaryCurrency
-      : currencies.baseCurrency;
+  // Effective exchange rate: session override → config entry → legacy rate
+  const getExchangeRate = (currency: string): number => {
+    if (currency === currencies.baseCurrency) return 1;
+    if (sessionRates[currency] && sessionRates[currency] > 0) return sessionRates[currency];
+    const entry = currencies.secondaryCurrencies.find(e => e.currency === currency);
+    return entry?.exchangeRate ?? currencies.exchangeRate ?? 1;
+  };
 
-    // Convert stored base amount ↔ secondary amount when toggling
-    // exchangeRate = base units per 1 secondary (e.g. 150 EGP/USD)
-    // base→secondary: divide; secondary→base: multiply
-    const baseAmount = paymentAmounts[methodId] ?? 0;
-    const newAmount = next === currencies.secondaryCurrency
-      ? parseFloat((baseAmount / currencies.exchangeRate).toFixed(2))
-      : parseFloat((baseAmount * currencies.exchangeRate).toFixed(2));
-
-    setPaymentCurrencies(prev => ({ ...prev, [methodId]: next }));
-    // Don't auto-update paymentAmounts — user will re-enter in new currency
-    void newAmount; // suppress unused warning
+  // Select a specific currency for a method
+  const selectMethodCurrency = (methodId: string, currency: string) => {
+    if (!currencies.enabled) return;
+    setPaymentCurrencies(prev => ({ ...prev, [methodId]: currency }));
+    // Reset the amount so user re-enters in the new currency
+    setPaymentAmounts(prev => ({ ...prev, [methodId]: 0 }));
   };
 
   // When user types an amount in secondary currency, store the base equivalent
-  // exchangeRate = base per secondary (e.g. 150 EGP/USD), so base = secondary × rate
+  // base = secondary × rate
   const handleSecondaryAmountChange = (methodId: string, rawValue: string) => {
     const secondary = parseFloat(rawValue) || 0;
-    const base = currencies.exchangeRate > 0
-      ? parseFloat((secondary * currencies.exchangeRate).toFixed(6))
+    const rate = getExchangeRate(getMethodCurrency(methodId));
+    const base = rate > 0
+      ? parseFloat((secondary * rate).toFixed(6))
       : 0;
     setLastModifiedMethodId(methodId);
     setPaymentAmounts(prev => ({ ...prev, [methodId]: base }));
   };
 
-  // Display value for an input: base or secondary depending on selected currency
-  // exchangeRate = base per secondary, so secondary = base / rate
+  // Display value: if secondary, show base / rate; otherwise show base
   const getDisplayAmount = (methodId: string): string => {
     const base = paymentAmounts[methodId] ?? 0;
-    if (isSecondary(methodId) && currencies.exchangeRate > 0) {
-      const sec = base / currencies.exchangeRate;
+    if (isSecondary(methodId)) {
+      const rate = getExchangeRate(getMethodCurrency(methodId));
+      if (rate <= 0) return "";
+      const sec = base / rate;
       return sec === 0 ? "" : sec.toFixed(2);
     }
     return base === 0 ? "" : base.toFixed(2);
+  };
+
+  // Update session exchange rate for a currency
+  const updateSessionRate = (currency: string, value: string) => {
+    const num = parseFloat(value);
+    if (!isNaN(num) && num > 0) {
+      setSessionRates(prev => ({ ...prev, [currency]: num }));
+    }
+  };
+
+  // Render the currency selector dropdown for a payment method card
+  const renderCurrencySelector = (methodId: string, sizeClass = "text-[10px]") => {
+    if (!currencies.enabled || currencies.secondaryCurrencies.length === 0) return null;
+    return (
+      <select
+        value={getMethodCurrency(methodId)}
+        onChange={(e) => selectMethodCurrency(methodId, e.target.value)}
+        disabled={invoiceSubmitted || isProcessingPayment}
+        className={`${sizeClass} px-1.5 py-0.5 rounded border border-ziditech-400 text-ziditech-600 bg-white dark:bg-gray-700 dark:text-ziditech-300 font-bold focus:outline-none cursor-pointer disabled:opacity-50`}
+        title="Select currency"
+      >
+        <option value={currencies.baseCurrency}>{currencies.baseCurrency}</option>
+        {currencies.secondaryCurrencies.map(c => (
+          <option key={c.currency} value={c.currency}>{c.currency}</option>
+        ))}
+      </select>
+    );
+  };
+
+  // Render exchange rate display/editor below the amount input
+  const renderExchangeRateRow = (methodId: string) => {
+    if (!isSecondary(methodId)) return null;
+    const currency = getMethodCurrency(methodId);
+    const rate = getExchangeRate(currency);
+    return (
+      <div className="flex items-center gap-1 mt-1">
+        <span className="text-xs text-gray-400">1 {currency} =</span>
+        {currencies.allowEditRate ? (
+          <input
+            type="number"
+            min="0.0001"
+            step="any"
+            value={sessionRates[currency] ?? rate}
+            onChange={(e) => updateSessionRate(currency, e.target.value)}
+            disabled={invoiceSubmitted || isProcessingPayment}
+            className="w-24 px-1.5 py-0.5 text-xs border border-amber-300 rounded bg-amber-50 dark:bg-amber-900/20 dark:border-amber-600 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-50"
+            title="Edit exchange rate"
+          />
+        ) : (
+          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+            {rate.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+          </span>
+        )}
+        <span className="text-xs text-gray-400">{currencies.baseCurrency}</span>
+      </div>
+    );
   };
 
   const processPayment = async (deliveryPersonnel: string | null = null) => {
@@ -1041,12 +1097,15 @@ export default function PaymentDialog({
           discountAmount: itemDiscounts[item.id]?.discountAmount || 0,
         })),
       customer: selectedCustomer,
-      paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => ({
-        method,
-        amount: parseFloat((Number(amount) || 0).toFixed(6)),
-        currency: getMethodCurrency(method as string),
-        exchange_rate: currencies.exchangeRate,
-      })),
+      paymentMethods: (adjustedPaymentMethods ?? []).map(([method, amount]) => {
+        const mCurrency = getMethodCurrency(method as string);
+        return {
+          method,
+          amount: parseFloat((Number(amount) || 0).toFixed(6)),
+          currency: mCurrency,
+          exchange_rate: getExchangeRate(mCurrency),
+        };
+      }),
       subtotal: calculations.subtotal,
       SalesTaxCharges: selectedSalesTaxCharges,
       taxAmount: calculations.taxAmount,
@@ -1447,17 +1506,7 @@ export default function PaymentDialog({
                               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                                 Amount
                               </label>
-                              {currencies.enabled && currencies.secondaryCurrency && (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleMethodCurrency(method.id)}
-                                  disabled={invoiceSubmitted || isProcessingPayment}
-                                  className="text-xs px-2 py-0.5 rounded-full border border-ziditech-400 text-ziditech-600 hover:bg-ziditech-50 font-semibold transition-colors"
-                                  title="Toggle currency"
-                                >
-                                  {getMethodCurrency(method.id)}
-                                </button>
-                              )}
+                              {renderCurrencySelector(method.id, "text-sm")}
                             </div>
                             <input
                               type="number"
@@ -1477,6 +1526,7 @@ export default function PaymentDialog({
                                   : ""
                               }`}
                             />
+                            {renderExchangeRateRow(method.id)}
                             {isSecondary(method.id) && (paymentAmounts[method.id] ?? 0) > 0 && (
                               <p className="text-xs text-gray-500 mt-1">
                                 ≈ {currencies.baseSymbol}{(paymentAmounts[method.id] ?? 0).toFixed(2)} {currencies.baseCurrency}
@@ -2197,17 +2247,7 @@ export default function PaymentDialog({
                               Amount
                             </label>
                             <div className="flex items-center space-x-1">
-                              {currencies.enabled && currencies.secondaryCurrency && (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleMethodCurrency(method.id)}
-                                  disabled={invoiceSubmitted || isProcessingPayment}
-                                  className="text-[10px] px-1.5 py-0.5 rounded-full border border-ziditech-400 text-ziditech-600 hover:bg-ziditech-50 font-bold transition-colors"
-                                  title="Toggle currency"
-                                >
-                                  {getMethodCurrency(method.id)}
-                                </button>
-                              )}
+                              {renderCurrencySelector(method.id)}
                               <button
                                 onClick={() => handleAutoFillPayment(method.id)}
                                 disabled={invoiceSubmitted || isProcessingPayment}
@@ -2256,6 +2296,7 @@ export default function PaymentDialog({
                                 : ""
                             }`}
                           />
+                          {renderExchangeRateRow(method.id)}
                           {isSecondary(method.id) && (paymentAmounts[method.id] ?? 0) > 0 && (
                             <p className="text-xs text-gray-500 mt-1">
                               ≈ {currencies.baseSymbol}{(paymentAmounts[method.id] ?? 0).toFixed(2)} {currencies.baseCurrency}
