@@ -27,6 +27,8 @@ add_to_apps_screen = [
 # app_include_css = "/assets/sultan/css/sultan.css"
 app_include_js = "/assets/sultan/js/sultan_pos_modifier.js"
 
+page_js = {"point-of-sale": "public/js/pos_extension.js"}
+
 # include js, css files in header of web template
 # web_include_css = "/assets/sultan/css/sultan.css"
 # web_include_js = "/assets/sultan/js/sultan.js"
@@ -49,6 +51,7 @@ doctype_js = {
 	"Journal Entry": "public/js/doctype/accounting_addendum.js",
 	"Account": "public/js/doctype/account_autonumber.js",
 	"Employee": "public/js/doctype/employee_pos_login.js",
+	"POS Closing Entry": "public/js/pos_closing_entry_extension.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 doctype_tree_js = {"Account": "public/js/doctype/account_autonumber.js"}
@@ -203,6 +206,13 @@ doc_events = {
 override_doctype_class = {
 	"Sales Invoice": "sultan.sultan.api.sales_invoice.CustomSalesInvoice",
 	"Purchase Invoice": "sultan.sultan.api.purchase_invoice.CustomPurchaseInvoice",
+}
+
+# Dashboard Links
+# ---------------
+override_doctype_dashboards = {
+	"POS Opening Entry": "sultan.sultan.utils.get_pos_opening_entry_dashboard",
+	"POS Closing Entry": "sultan.sultan.utils.get_pos_closing_entry_dashboard",
 }
 
 # Scheduled Tasks
