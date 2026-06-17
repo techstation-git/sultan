@@ -988,22 +988,16 @@ export default function PaymentDialog({
     return (
       <div className="flex items-center gap-1 mt-1">
         <span className="text-xs text-gray-400">1 {currency} =</span>
-        {currencies.allowEditRate ? (
-          <input
-            type="number"
-            min="0.0001"
-            step="any"
-            value={sessionRates[currency] ?? rate}
-            onChange={(e) => updateSessionRate(currency, e.target.value)}
-            disabled={invoiceSubmitted || isProcessingPayment}
-            className="w-24 px-1.5 py-0.5 text-xs border border-amber-300 rounded bg-amber-50 dark:bg-amber-900/20 dark:border-amber-600 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-50"
-            title="Edit exchange rate"
-          />
-        ) : (
-          <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
-            {rate.toLocaleString(undefined, { maximumFractionDigits: 4 })}
-          </span>
-        )}
+        <input
+          type="number"
+          min="0.0001"
+          step="any"
+          value={sessionRates[currency] ?? rate}
+          onChange={(e) => updateSessionRate(currency, e.target.value)}
+          disabled={invoiceSubmitted || isProcessingPayment}
+          className="w-24 px-1.5 py-0.5 text-xs border border-amber-300 rounded bg-amber-50 dark:bg-amber-900/20 dark:border-amber-600 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-50"
+          title="Edit exchange rate"
+        />
         <span className="text-xs text-gray-400">{currencies.baseCurrency}</span>
       </div>
     );
