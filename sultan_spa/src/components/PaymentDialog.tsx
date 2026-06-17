@@ -193,6 +193,8 @@ export default function PaymentDialog({
   const [paymentCurrencies, setPaymentCurrencies] = useState<Record<string, string>>({});
   // Per-session exchange rate overrides (cashier edits)
   const [sessionRates, setSessionRates] = useState<Record<string, number>>({});
+  // Raw string values for exchange rate inputs (allows clearing while typing)
+  const [sessionRateInputs, setSessionRateInputs] = useState<Record<string, string>>({});
 
   // Hooks
   const { posDetails, loading: posLoading } = usePOSDetails();
@@ -955,6 +957,8 @@ export default function PaymentDialog({
 
   // Update session exchange rate for a currency
   const updateSessionRate = (currency: string, value: string) => {
+    // Always update the display string so clearing/partial input works
+    setSessionRateInputs(prev => ({ ...prev, [currency]: value }));
     const num = parseFloat(value);
     if (!isNaN(num) && num > 0) {
       setSessionRates(prev => ({ ...prev, [currency]: num }));
@@ -992,8 +996,15 @@ export default function PaymentDialog({
           type="number"
           min="0.0001"
           step="any"
-          value={sessionRates[currency] ?? rate}
+          value={sessionRateInputs[currency] ?? (sessionRates[currency] ?? rate)}
           onChange={(e) => updateSessionRate(currency, e.target.value)}
+          onBlur={(e) => {
+            const num = parseFloat(e.target.value);
+            if (isNaN(num) || num <= 0) {
+              // Reset display to last valid rate on blur
+              setSessionRateInputs(prev => ({ ...prev, [currency]: String(sessionRates[currency] ?? rate) }));
+            }
+          }}
           disabled={invoiceSubmitted || isProcessingPayment}
           className="w-24 px-1.5 py-0.5 text-xs border border-amber-300 rounded bg-amber-50 dark:bg-amber-900/20 dark:border-amber-600 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:opacity-50"
           title="Edit exchange rate"
