@@ -273,22 +273,28 @@ export default function PaymentDialog({
   useEffect(() => {
     if (!currencies.enabled || currencies.secondaryCurrencies.length === 0) return;
     const secondary = currencies.secondaryCurrencies.map(c => c.currency);
-    frappe.call({
-      method: "sultan.sultan.api.sales_invoice.get_today_exchange_rates",
-      args: { currencies: secondary, base_currency: currencies.baseCurrency },
-      callback: (r: { message?: Record<string, number> }) => {
-        if (r.message && Object.keys(r.message).length > 0) {
-          setSessionRates(prev => ({ ...r.message, ...prev }));
+    const params = new URLSearchParams({
+      currencies: JSON.stringify(secondary),
+      base_currency: currencies.baseCurrency,
+    });
+    fetch(`/api/method/sultan.sultan.api.sales_invoice.get_today_exchange_rates?${params}`, {
+      credentials: "include",
+    })
+      .then(res => res.json())
+      .then((data: { message?: Record<string, number> }) => {
+        const rates = data.message;
+        if (rates && Object.keys(rates).length > 0) {
+          setSessionRates(prev => ({ ...rates, ...prev }));
           setSessionRateInputs(prev => {
             const updates: Record<string, string> = {};
-            for (const [cur, rate] of Object.entries(r.message!)) {
+            for (const [cur, rate] of Object.entries(rates)) {
               if (!prev[cur]) updates[cur] = String(rate);
             }
             return { ...updates, ...prev };
           });
         }
-      },
-    });
+      })
+      .catch(() => { /* non-fatal — falls back to POS Profile rate */ });
   }, [currencies.enabled, currencies.baseCurrency, currencies.secondaryCurrencies.length]);
 
   // Populate sharing data from external invoice data
